@@ -1,0 +1,176 @@
+// FlowSync — Prisma Schema
+// Represents the full MVP data model as defined in PRD §9 and TRD §14
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Integration ──────────────────────────────────────────────────────────────
+// Represents a configured external system connection (REST, FHIR, Messaging)
+
+model Integration {
+  id        String   @id @default(uuid())
+  name      String
+  type      String   // "rest" | "fhir" | "messaging"
+  status    String   @default("active") // "active" | "inactive" | "error"
+  baseUrl   String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  syncJobs         SyncJob[]
+  integrationLogs  IntegrationLog[]
+
+  @@map("integrations")
+}
+
+// ─── User ─────────────────────────────────────────────────────────────────────
+// FlowSync's unified internal user model.
+// Populated from external systems via connectors + transformers.
+
+model User {
+  id        String    @id @default(uuid())
+  name      String
+  email     String?
+  phone     String?
+  gender    String?
+  birthDate DateTime? @map("birth_date")
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+// ─── Event ────────────────────────────────────────────────────────────────────
+// FlowSync's unified internal event model (e.g. for appointments).
+
+model Event {
+  id          String    @id @default(uuid())
+  entityType  String    @map("entity_type") // e.g. "appointment"
+  status      String
+  startedAt   DateTime  @map("started_at")
+  completedAt DateTime? @map("completed_at")
+  description String?
+  metadata    Json?
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  @@map("events")
+}
+
+// ─── ExternalEntity ───────────────────────────────────────────────────────────
+// Maps a FlowSync internal entity to an external system record.
+// Enforces deduplication via UNIQUE(source_system, external_id, entity_type).
+
+model ExternalEntity {
+  id               String   @id @default(uuid())
+  internalEntityId String   @map("internal_entity_id")
+  externalId       String   @map("external_id")
+  sourceSystem     String   @map("source_system") // e.g. "randomuser", "fhir", "messaging"
+  entityType       String   @map("entity_type")   // e.g. "user", "patient", "appointment"
+  lastSyncedAt     DateTime @default(now()) @map("last_synced_at")
+
+  @@unique([sourceSystem, externalId, entityType])
+  @@map("external_entities")
+}
+
+// ─── SyncJob ──────────────────────────────────────────────────────────────────
+// Tracks the lifecycle of an asynchronous synchronization operation.
+
+model SyncJob {
+  id               String    @id @default(uuid())
+  integrationId    String    @map("integration_id")
+  status           String    @default("PENDING") // PENDING | PROCESSING | COMPLETED | FAILED
+  resourceType     String?   @map("resource_type") // e.g. "User", "Patient", "Appointment"
+  recordsProcessed Int       @default(0) @map("records_processed")
+  recordsFailed    Int       @default(0) @map("records_failed")
+  retryCount       Int       @default(0) @map("retry_count")
+  errorMessage     String?   @map("error_message")
+  startedAt        DateTime? @map("started_at")
+  completedAt      DateTime? @map("completed_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  integration Integration @relation(fields: [integrationId], references: [id])
+
+  @@index([integrationId, status])
+  @@map("sync_jobs")
+}
+
+// ─── IntegrationLog ───────────────────────────────────────────────────────────
+// Structured audit log for every integration operation.
+// Powers the Logs page and Failures page on the dashboard.
+
+model IntegrationLog {
+  id            String   @id @default(uuid())
+  integrationId String   @map("integration_id")
+  operation     String   // e.g. "SYNC", "HEALTH_CHECK", "WEBHOOK"
+  status        String   // "SUCCESS" | "FAILED" | "RETRYING"
+  latency       Int?     // milliseconds
+  retryCount    Int      @default(0) @map("retry_count")
+  errorMessage  String?  @map("error_message")
+  metadata      Json?    // additional context (non-sensitive)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  integration Integration @relation(fields: [integrationId], references: [id])
+
+  @@index([integrationId, status])
+  @@index([operation, status])
+  @@map("integration_logs")
+}
+
+// ─── WebhookEvent ─────────────────────────────────────────────────────────────
+// Stores incoming webhook metadata.
+// UNIQUE(source, external_event_id) enforces idempotent processing.
+
+model WebhookEvent {
+  id              String   @id @default(uuid())
+  externalEventId String   @map("external_event_id")
+  source          String   // e.g. "rest", "fhir"
+  eventType       String   @map("event_type")
+  payload         Json     // raw (non-sensitive) payload metadata
+  processed       Boolean  @default(false)
+  receivedAt      DateTime @default(now()) @map("received_at")
+  processedAt     DateTime? @map("processed_at")
+
+  @@unique([source, externalEventId])
+  @@map("webhook_events")
+}
+
+// ─── WorkflowExecution ────────────────────────────────────────────────────────
+// Tracks execution of automated workflows triggered by events.
+
+model WorkflowExecution {
+  id           String    @id @default(uuid())
+  workflowName String    @map("workflow_name")
+  triggerEvent String    @map("trigger_event")
+  status       String    @default("PENDING") // PENDING | RUNNING | COMPLETED | FAILED
+  errorMessage String?   @map("error_message")
+  startedAt    DateTime? @map("started_at")
+  completedAt  DateTime? @map("completed_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  @@index([status])
+  @@map("workflow_executions")
+}
+
+// ─── Notification ─────────────────────────────────────────────────────────────
+// Stores outbound messaging details and guarantees idempotency.
+
+model Notification {
+  id                  String   @id @default(uuid())
+  webhookEventId      String   @map("webhook_event_id")
+  workflowExecutionId String   @map("workflow_execution_id")
+  provider            String
+  recipient           String
+  status              String   // "PENDING" | "SENT" | "FAILED"
+  externalId          String?  @map("external_id") // Resend message ID
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  @@unique([webhookEventId, recipient])
+  @@index([status])
+  @@map("notifications")
+}
