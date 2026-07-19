@@ -5,10 +5,24 @@
  * All responses are parsed into ApiResponse<T> or throw on network errors.
  */
 
-import { ApiResponse, Integration, SyncJob, SyncJobList, IntegrationLog, Metrics, HealthCheckResult } from "./types";
+import {
+  ApiResponse,
+  Integration,
+  SyncJob,
+  SyncJobList,
+  IntegrationLog,
+  HealthCheckResult,
+  OverviewMetrics,
+  TimeSeriesMetrics,
+  NormalizedActivity,
+  EnhancedIntegrationItem,
+  EnhancedIntegrationDetail,
+  WorkflowExecutionItem,
+  NormalizedFailure,
+  PaginatedResponse,
+} from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3001";
-const API_KEY  = process.env.NEXT_PUBLIC_API_KEY ?? "dev-api-key-change-in-production";
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 
 // ─── Core fetch wrapper ───────────────────────────────────────────────────────
 
@@ -20,7 +34,6 @@ async function apiFetch<T>(
     ...options,
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${API_KEY}`,
       ...options.headers,
     },
   });
@@ -38,11 +51,11 @@ async function apiFetch<T>(
 
 export const api = {
   integrations: {
-    list: (): Promise<Integration[]> =>
-      apiFetch<Integration[]>("/api/integrations"),
+    list: (): Promise<EnhancedIntegrationItem[]> =>
+      apiFetch<EnhancedIntegrationItem[]>("/api/integrations"),
 
-    get: (id: string): Promise<Integration> =>
-      apiFetch<Integration>(`/api/integrations/${id}`),
+    get: (id: string): Promise<EnhancedIntegrationDetail> =>
+      apiFetch<EnhancedIntegrationDetail>(`/api/integrations/${id}`),
 
     triggerSync: (id: string, resourceType?: string): Promise<{ jobId: string; status: string }> =>
       apiFetch(`/api/integrations/${id}/sync`, {
@@ -60,9 +73,10 @@ export const api = {
     list: (params?: {
       integrationId?: string;
       status?: string;
+      page?: number;
       limit?: number;
-      offset?: number;
-    }): Promise<SyncJobList> => {
+      sort?: "asc" | "desc";
+    }): Promise<PaginatedResponse<SyncJob>> => {
       const qs = params
         ? "?" + new URLSearchParams(
             Object.fromEntries(
@@ -72,24 +86,31 @@ export const api = {
             )
           ).toString()
         : "";
-      return apiFetch<SyncJobList>(`/api/sync-jobs${qs}`);
+      return apiFetch<PaginatedResponse<SyncJob>>(`/api/sync-jobs${qs}`);
     },
 
     get: (id: string): Promise<SyncJob> =>
       apiFetch<SyncJob>(`/api/sync-jobs/${id}`),
   },
 
-  // ─── Monitoring ─────────────────────────────────────────────────────────────
-
   monitoring: {
-    metrics: (): Promise<Metrics> =>
-      apiFetch<Metrics>("/api/metrics"),
+    metrics: (): Promise<OverviewMetrics> =>
+      apiFetch<OverviewMetrics>("/api/metrics"),
+
+    timeSeries: (range: "24h" | "7d" | "30d" = "24h"): Promise<TimeSeriesMetrics> =>
+      apiFetch<TimeSeriesMetrics>(`/api/metrics/time-series?range=${range}`),
+
+    recentActivity: (): Promise<NormalizedActivity[]> =>
+      apiFetch<NormalizedActivity[]>("/api/metrics/recent-activity"),
 
     logs: (params?: {
       integrationId?: string;
       status?: string;
+      operation?: string;
+      search?: string;
+      page?: number;
       limit?: number;
-    }): Promise<{ logs: IntegrationLog[]; total: number }> => {
+    }): Promise<PaginatedResponse<IntegrationLog>> => {
       const qs = params
         ? "?" + new URLSearchParams(
             Object.fromEntries(
@@ -99,10 +120,43 @@ export const api = {
             )
           ).toString()
         : "";
-      return apiFetch(`/api/logs${qs}`);
+      return apiFetch<PaginatedResponse<IntegrationLog>>(`/api/logs${qs}`);
     },
 
-    failures: (): Promise<IntegrationLog[]> =>
-      apiFetch<IntegrationLog[]>("/api/failures"),
+    failures: (params?: {
+      page?: number;
+      limit?: number;
+      sourceType?: string;
+      integration?: string;
+    }): Promise<PaginatedResponse<NormalizedFailure>> => {
+      const qs = params
+        ? "?" + new URLSearchParams(
+            Object.fromEntries(
+              Object.entries(params)
+                .filter(([, v]) => v !== undefined)
+                .map(([k, v]) => [k, String(v)])
+            )
+          ).toString()
+        : "";
+      return apiFetch<PaginatedResponse<NormalizedFailure>>(`/api/failures${qs}`);
+    },
+
+    workflows: (params?: {
+      page?: number;
+      limit?: number;
+      status?: string;
+      eventType?: string;
+    }): Promise<PaginatedResponse<WorkflowExecutionItem>> => {
+      const qs = params
+        ? "?" + new URLSearchParams(
+            Object.fromEntries(
+              Object.entries(params)
+                .filter(([, v]) => v !== undefined)
+                .map(([k, v]) => [k, String(v)])
+            )
+          ).toString()
+        : "";
+      return apiFetch<PaginatedResponse<WorkflowExecutionItem>>(`/api/workflow-executions${qs}`);
+    },
   },
 };

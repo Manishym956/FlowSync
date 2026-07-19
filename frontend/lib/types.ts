@@ -108,3 +108,114 @@ export interface HealthCheckResult {
 // ─── UI Helpers ───────────────────────────────────────────────────────────────
 
 export type StatusVariant = "healthy" | "degraded" | "failed" | "syncing" | "pending";
+
+// ─── Phase 5 Observability Types ──────────────────────────────────────────────
+
+export interface OverviewMetrics {
+  activeIntegrations: number;
+  healthyIntegrations: number;
+  degradedIntegrations: number;
+  failedIntegrations: number;
+
+  totalSyncJobs: number;
+  successfulSyncJobs: number;
+  failedSyncJobs: number;
+  syncSuccessRate: number;
+
+  averageApiLatency: number;
+
+  totalWorkflowExecutions: number;
+  successfulWorkflowExecutions: number;
+  failedWorkflowExecutions: number;
+
+  totalNotifications: number;
+  sentNotifications: number;
+  failedNotifications: number;
+}
+
+export interface TimeSeriesItem {
+  timestamp: string;
+  successCount: number;
+  failedCount: number;
+  averageLatency: number;
+}
+
+export interface TimeSeriesMetrics {
+  syncJobs: TimeSeriesItem[];
+  workflowExecutions: TimeSeriesItem[];
+}
+
+export interface EnhancedIntegrationItem {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  lastSuccessfulSync: string | null;
+  lastSyncStatus: string | null;
+  averageLatency: number;
+  successRate: number;
+}
+
+export interface EnhancedIntegrationDetail {
+  id: string;
+  name: string;
+  type: string;
+  status: string;
+  baseUrl: string | null;
+  lastSuccessfulSync: string | null;
+  lastSyncStatus: string | null;
+  averageLatency: number;
+  successRate: number;
+  recordsProcessed: number;
+  recentErrors: string[];
+  recentSyncJobs: any[];
+}
+
+export interface WorkflowExecutionItem {
+  id: string;
+  workflowName: string;
+  triggerEvent: string;
+  status: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  duration: number | null;
+  errorMessage: string | null;
+}
+
+export interface NormalizedFailure {
+  id: string;
+  sourceType: "SYNC_JOB" | "WORKFLOW" | "NOTIFICATION";
+  integration: string;
+  operation: string;
+  errorCategory: string;
+  errorSummary: string;
+  timestamp: string;
+  retryCount: number;
+  relatedResourceId: string | null;
+}
+
+export interface NormalizedActivity {
+  id: string;
+  type:
+    | "SYNC_COMPLETED"
+    | "SYNC_FAILED"
+    | "WORKFLOW_COMPLETED"
+    | "WORKFLOW_FAILED"
+    | "NOTIFICATION_SENT"
+    | "NOTIFICATION_FAILED";
+  summary: string;
+  timestamp: string;
+  integration: string;
+}
+
+export interface PaginationMetadata {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export interface PaginatedResponse<T> {
+  items: T[];
+  pagination: PaginationMetadata;
+}
