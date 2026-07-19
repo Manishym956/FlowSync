@@ -40,3 +40,8 @@ prisma/*.db
 
 # TypeScript
 *.tsbuildinfo
+
+guidelines.md
+PRD.md
+TRD.md
+UI-rules.md
